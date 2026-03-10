@@ -1,0 +1,1 @@
+minizinc # Check: https://python.minizinc.dev/en/latest/getting_started.html#installation
