@@ -127,7 +127,7 @@ def main():
 
             # Solve CP with Chuffed
             cp_time, cp_makespan = solve_instance(
-                instance_path, cp_model, solver_name="chuffed"
+                instance_path, cp_model, solver_name="chuffed" # TODO check this solvers and compare each of them: or-tools, gecode
             )
             cp_times.append(cp_time)
             cp_solutions.append(cp_makespan)
@@ -146,7 +146,7 @@ def main():
 
             # Solve ILP with Coin-BC
             ilp_time, ilp_makespan = solve_instance(
-                instance_path, ilp_model, solver_name="coin-bc"
+                instance_path, ilp_model, solver_name="coin-bc" # TODO check this solvers and compare each of them: gurobi (no MZ, check HPC), cplex
             )
             ilp_times.append(ilp_time)
             ilp_solutions.append(ilp_makespan)

@@ -6,7 +6,7 @@
 int: n;                                 % The total number of activities in the project
 int: horizon;                           % The absolute maximum time the project could possibly take
 array[1..n] of int: duration;           % How many time units each activity takes to complete
-array[1..n, 1..4] of int: resource_usage; % How much of each of the 4 resources an activity needs while running
+array[1..n, 1..4] of int: resource_usage; % How much of each of the 4 resources an activity needs while running, TODO update amount of resources to be dynamic and match each problem instance
 array[1..4] of int: capacity;           % The maximum amount of each resource available at any given time
 array[1..n] of set of int: successors;  % For each activity, a list of other activities that must wait for it to finish
 
@@ -67,3 +67,5 @@ constraint
 % =============================================================================
 % Find a valid schedule that makes the final end time (makespan) as small as possible.
 solve minimize makespan;
+
+% TODO Implement this for easier scheduling: https://docs.minizinc.dev/en/stable/lib-globals-scheduling.html
