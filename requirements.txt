@@ -1,0 +1,2 @@
+minizinc==0.10.0
+psplib==0.4.0
