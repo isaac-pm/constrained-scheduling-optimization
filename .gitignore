@@ -42,4 +42,5 @@ results/
 outputs/
 tmp/
 
+# Apptainer / Singularity
 *.sif
