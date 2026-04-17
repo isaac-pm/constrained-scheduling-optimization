@@ -1,0 +1,51 @@
+Bootstrap: docker
+From: python:3.11-slim
+
+%labels
+    Author System
+    Software MiniZinc & Python
+    Version 2.9.5
+    OS Debian (Python 3.11-slim)
+
+%files
+    # Copy your local requirements into the container during the build
+    requirements.txt /opt/requirements.txt
+
+%post
+    # 1. Update packages and install necessary tools for downloading and extracting
+    apt-get update
+    apt-get install -y wget tar ca-certificates
+    rm -rf /var/lib/apt/lists/*
+
+    # 2. Define version variables
+    MZ_VERSION="2.9.5"
+    MZ_ARCHIVE="MiniZincIDE-${MZ_VERSION}-bundle-linux-x86_64.tgz"
+    
+    # The standard release URL for MiniZinc GitHub
+    MZ_URL="https://github.com/MiniZinc/MiniZincIDE/releases/download/${MZ_VERSION}/${MZ_ARCHIVE}"
+
+    # 3. Download and extract the archive into /opt
+    cd /opt
+    wget -q "${MZ_URL}"
+    tar -xzf "${MZ_ARCHIVE}"
+    rm "${MZ_ARCHIVE}"
+
+    # 4. Create a generic symlink to avoid hardcoding the version path in the environment
+    ln -s "/opt/MiniZincIDE-${MZ_VERSION}-bundle-linux-x86_64" /opt/minizinc
+
+    # 5. Install Python dependencies globally inside the container
+    pip install --no-cache-dir --upgrade pip
+    pip install --no-cache-dir -r /opt/requirements.txt
+
+%environment
+    # Ensure correct encoding for Python terminal output
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+
+    # Ensure the MiniZinc binaries and bundled libraries are discoverable
+    export PATH="/opt/minizinc/bin:${PATH}"
+    export LD_LIBRARY_PATH="/opt/minizinc/lib:${LD_LIBRARY_PATH}"
+
+%runscript
+    # The default command executed when the container runs
+    exec python run.py "$@"
