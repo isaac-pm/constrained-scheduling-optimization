@@ -1,0 +1,8 @@
+The following modules were not unloaded:
+  (Use "module --force purge" to unload all):
+
+  1) env/release/default
+
+Lmod is automatically replacing "env/release/default" with
+"env/development/2024a".
+

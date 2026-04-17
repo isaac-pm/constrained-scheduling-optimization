@@ -1,0 +1,12 @@
+RCPSP Benchmark Solver
+===========================================================================
+Output directory: /mnt/aiongpfs/users/ipalmamedina/constrained-scheduling-optimization/results
+Results file: 2026-04-17-17:06-results.csv
+Hardware file: 2026-04-17-17:06-hardware.json
+Config snapshot: 2026-04-17-17:06-config.yaml
+Repetitions per instance: 3
+Selected instances: 12 across 4 problem sizes
+
+j30: 3 instances
+---------------------------------------------------------------------------
+  [01/03] j301_1       run 01/03 | Status: Solving CP...   [01/03] j301_1       run 01/03 | Status: Solving ILP...
