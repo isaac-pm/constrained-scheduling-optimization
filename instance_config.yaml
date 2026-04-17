@@ -1,0 +1,24 @@
+# Instance selection configuration for reproducibility
+# Format: {problem_size: [list of instance names]}
+# These instances will be run for benchmarking
+
+instances:
+  j30:
+    - j301_1
+    - j301_2
+    - j301_3
+  j60:
+    - j601_1
+    - j601_2
+    - j601_3
+  j90:
+    - j901_1
+    - j901_2
+    - j901_3
+  j120:
+    - j1201_1
+    - j1201_2
+    - j1201_3
+
+# Number of runs per instance for statistical significance
+runs_per_instance: 3

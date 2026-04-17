@@ -2,7 +2,7 @@
 
 ## Environment
 
-- Python venv: `.venv/` (create with `python -m venv .venv`, activate with `source .venv/bin/activate`)
+- Python venv: `env/` (create with `python -m venv env`, activate with `source env/bin/activate`)
 - Dependencies: `minizinc==0.10.0`, `psplib==0.4.0`
 - Install: `pip install -r requirements.txt`
 
@@ -13,10 +13,8 @@ python run.py
 ```
 
 `run.py` benchmarks both RCPSP models on all PSPLIB SM-format instances:
-- `rcpsp_cp.mzn` - Constraint Programming formulation (faster)
-- `rcpsp_ilp.mzn` - Integer Linear Programming formulation (slower, more memory)
-
-Each instance is solved with both models and timing is measured.
+- `rcpsp_cp.mzn` - Constraint Programming formulation (faster, uses `chuffed` solver)
+- `rcpsp_ilp.mzn` - Integer Linear Programming formulation (slower, uses `coin-bc` solver)
 
 ## Data
 
@@ -39,3 +37,4 @@ Note: psplib uses 0-based indexing for successors (indices into activities array
 
 - `papers/` contains reference papers for RCPSP algorithms
 - No test suite, linting, or CI configured
+- MiniZinc solvers (chuffed, coin-bc) must be installed separately and visible in PATH

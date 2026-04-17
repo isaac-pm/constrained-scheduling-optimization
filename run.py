@@ -1,9 +1,42 @@
+import argparse
+import csv
+import json
 import os
+import platform
+import subprocess
+import tempfile
 import time
-import glob
+from datetime import datetime
 from pathlib import Path
 
+import yaml
 from psplib import parse
+
+
+BASE_DIR = Path(__file__).resolve().parent
+DEFAULT_CONFIG_PATH = BASE_DIR / "instance_config.yaml"
+DEFAULT_OUTPUT_DIR = Path.cwd() / "results"
+DEFAULT_CP_MODEL = BASE_DIR / "rcpsp_cp.mzn"
+DEFAULT_ILP_MODEL = BASE_DIR / "rcpsp_ilp.mzn"
+DEFAULT_CP_SOLVER = "chuffed"
+DEFAULT_ILP_SOLVER = "coin-bc"
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Benchmark RCPSP CP and ILP models on a reproducible instance subset."
+    )
+    parser.add_argument(
+        "--config",
+        default=str(DEFAULT_CONFIG_PATH),
+        help="Path to the YAML file with the reproducible instance selection.",
+    )
+    parser.add_argument(
+        "--output-dir",
+        default=str(DEFAULT_OUTPUT_DIR),
+        help="Directory where timestamped benchmark outputs are written.",
+    )
+    return parser.parse_args()
 
 
 def parse_sm_file(filepath):
@@ -29,170 +62,320 @@ def parse_sm_file(filepath):
 
 
 def generate_dzn(data, output_path):
-    dzn_dir = os.path.dirname(output_path)
-    if dzn_dir:
-        os.makedirs(dzn_dir, exist_ok=True)
-    with open(output_path, "w") as f:
-        f.write(f"n = {data['n']};\n")
-        f.write(f"horizon = {data['horizon']};\n")
-        f.write(f"duration = {data['duration']};\n")
-        ru_rows = []
-        for ru in data["resource_usage"]:
-            ru_rows.append(", ".join(str(x) for x in ru))
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", encoding="utf-8") as file:
+        file.write(f"n = {data['n']};\n")
+        file.write(f"horizon = {data['horizon']};\n")
+        file.write(f"duration = {data['duration']};\n")
+        ru_rows = [", ".join(str(x) for x in ru) for ru in data["resource_usage"]]
         sparse_array = "[| " + " | ".join(ru_rows) + " |]"
-        f.write(f"resource_usage = {sparse_array};\n")
-        f.write(f"capacity = {data['capacity']};\n")
+        file.write(f"resource_usage = {sparse_array};\n")
+        file.write(f"capacity = {data['capacity']};\n")
         succ_lines = [
             "{" + ", ".join(str(s) for s in succ) + "}" if succ else "{}"
             for succ in data["successors"]
         ]
-        f.write(f"successors = [{', '.join(succ_lines)}];\n")
+        file.write(f"successors = [{', '.join(succ_lines)}];\n")
 
 
-def solve_instance(instance_path, model_path, solver_name="chuffed"):
+def load_instance_config(config_path):
+    with Path(config_path).open("r", encoding="utf-8") as file:
+        config = yaml.safe_load(file) or {}
+
+    instances = config.get("instances")
+    if not isinstance(instances, dict) or not instances:
+        raise ValueError(
+            "instance_config.yaml must define a non-empty 'instances' mapping"
+        )
+
+    runs_per_instance = int(config.get("runs_per_instance", 3))
+    if runs_per_instance < 1:
+        raise ValueError("runs_per_instance must be at least 1")
+
+    return {
+        "instances": instances,
+        "runs_per_instance": runs_per_instance,
+    }
+
+
+def normalize_instance_path(problem_size, instance_name):
+    return BASE_DIR / "data" / f"{problem_size}.sm" / f"{instance_name}.sm"
+
+
+def solve_instance(instance_path, model_path, solver_name):
     from minizinc import Instance, Model, Solver
 
+    instance_path = Path(instance_path)
+    model_path = Path(model_path)
     data = parse_sm_file(instance_path)
-    dzn_path = str(Path(instance_path).with_suffix(".dzn"))
-    generate_dzn(data, dzn_path)
 
-    start_time = time.time()
+    with tempfile.NamedTemporaryFile(suffix=".dzn", delete=False) as temp_file:
+        dzn_path = Path(temp_file.name)
+
+    generate_dzn(data, dzn_path)
+    start_time = time.perf_counter()
 
     try:
-        model = Model(model_path)
+        model = Model(str(model_path))
         solver = Solver.lookup(solver_name)
-        inst = Instance(solver, model)
-        inst.add_file(dzn_path)
-        result = inst.solve()
-        elapsed = time.time() - start_time
-
-        if os.path.exists(dzn_path):
-            os.remove(dzn_path)
+        instance = Instance(solver, model)
+        instance.add_file(str(dzn_path))
+        result = instance.solve()
+        elapsed = time.perf_counter() - start_time
 
         if result.solution is None:
-            return elapsed, None
-        return elapsed, result.solution.makespan
-    except Exception as e:
-        elapsed = time.time() - start_time
-        if os.path.exists(dzn_path):
-            os.remove(dzn_path)
-        return elapsed, f"Error"
+            return {
+                "elapsed_seconds": elapsed,
+                "makespan": None,
+                "status": "no_solution",
+                "error": "",
+            }
+
+        return {
+            "elapsed_seconds": elapsed,
+            "makespan": result.solution.makespan,
+            "status": "ok",
+            "error": "",
+        }
+    except Exception as exc:
+        elapsed = time.perf_counter() - start_time
+        return {
+            "elapsed_seconds": elapsed,
+            "makespan": None,
+            "status": "error",
+            "error": str(exc),
+        }
+    finally:
+        if dzn_path.exists():
+            dzn_path.unlink()
 
 
-def get_available_solvers():
-    from minizinc import Solver
-
+def collect_solver_inventory():
     try:
-        solvers = Solver.all()
-        print(f"Available solvers: {[s.name for s in solvers]}")
-        return [s.name for s in solvers]
-    except:
+        from minizinc import Solver
+
+        return sorted(solver.name for solver in Solver.all())
+    except Exception:
         return []
 
 
+def run_command(command):
+    try:
+        completed = subprocess.run(
+            command,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError:
+        return ""
+
+    output = completed.stdout.strip()
+    error = completed.stderr.strip()
+    if output and error:
+        return output + "\n" + error
+    return output or error
+
+
+def extract_lscpu_value(lscpu_output, label):
+    for line in lscpu_output.splitlines():
+        if line.startswith(f"{label}:"):
+            return line.split(":", 1)[1].strip()
+    return ""
+
+
+def collect_hardware_info():
+    lscpu_output = run_command(["lscpu"])
+    physical_cpu_count = ""
+    sockets = extract_lscpu_value(lscpu_output, "Socket(s)")
+    cores_per_socket = extract_lscpu_value(lscpu_output, "Core(s) per socket")
+    if sockets.isdigit() and cores_per_socket.isdigit():
+        physical_cpu_count = int(sockets) * int(cores_per_socket)
+    else:
+        physical_cpu_count = os.cpu_count()
+
+    return {
+        "timestamp": datetime.now().isoformat(timespec="seconds"),
+        "hostname": platform.node(),
+        "system": platform.system(),
+        "release": platform.release(),
+        "version": platform.version(),
+        "machine": platform.machine(),
+        "processor": platform.processor(),
+        "python_version": platform.python_version(),
+        "logical_cpu_count": os.cpu_count(),
+        "physical_cpu_count": physical_cpu_count,
+        "platform": platform.platform(),
+        "uname": platform.uname()._asdict(),
+        "slurm": {
+            "job_id": os.getenv("SLURM_JOB_ID", ""),
+            "job_name": os.getenv("SLURM_JOB_NAME", ""),
+            "node_list": os.getenv("SLURM_NODELIST", ""),
+            "cpus_on_node": os.getenv("SLURM_CPUS_ON_NODE", ""),
+            "mem_per_node": os.getenv("SLURM_MEM_PER_NODE", ""),
+            "submit_dir": os.getenv("SLURM_SUBMIT_DIR", ""),
+        },
+        "commands": {
+            "lscpu": lscpu_output,
+            "free_h": run_command(["free", "-h"]),
+            "minizinc_version": run_command(["minizinc", "--version"]),
+        },
+        "available_solvers": collect_solver_inventory(),
+    }
+
+
+def write_timestamped_config_snapshot(output_path, config_path, config, selection):
+    snapshot = {
+        "source_config": str(Path(config_path).resolve()),
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "runs_per_instance": config["runs_per_instance"],
+        "instances": selection,
+    }
+    with Path(output_path).open("w", encoding="utf-8") as file:
+        yaml.safe_dump(snapshot, file, sort_keys=False)
+
+
 def main():
-    print("RCPSP Benchmark Solver")
-    print("=" * 75)
+    args = parse_args()
+    config = load_instance_config(args.config)
+    timestamp = datetime.now().strftime("%Y-%m-%d-%H:%M")
 
-    solvers = get_available_solvers()
-    print()
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    results_path = output_dir / f"{timestamp}-results.csv"
+    hardware_path = output_dir / f"{timestamp}-hardware.json"
+    config_snapshot_path = output_dir / f"{timestamp}-config.yaml"
 
-    data_dirs = sorted(glob.glob("data/j*.sm"))
-    print(
-        f"Found {len(data_dirs)} problem sets: {[d.split('/')[1] for d in data_dirs]}\n"
+    selected_instances = {
+        problem_size: list(instance_names)
+        for problem_size, instance_names in config["instances"].items()
+    }
+
+    write_timestamped_config_snapshot(
+        config_snapshot_path,
+        args.config,
+        config,
+        selected_instances,
     )
 
-    cp_model = "rcpsp_cp.mzn"
-    ilp_model = "rcpsp_ilp.mzn"
+    hardware_info = collect_hardware_info()
+    with hardware_path.open("w", encoding="utf-8") as file:
+        json.dump(hardware_info, file, indent=2, sort_keys=True)
+        file.write("\n")
 
-    results = {}
+    rows = []
+    total_instances = sum(
+        len(instance_names) for instance_names in selected_instances.values()
+    )
 
-    for data_dir in data_dirs:
-        problem_set = data_dir.split("/")[1]
-        instances = sorted(glob.glob(f"{data_dir}/*.sm"))
-        print(f"\n{problem_set}: {len(instances)} instances")
+    print("RCPSP Benchmark Solver")
+    print("=" * 75)
+    print(f"Output directory: {output_dir}")
+    print(f"Results file: {results_path.name}")
+    print(f"Hardware file: {hardware_path.name}")
+    print(f"Config snapshot: {config_snapshot_path.name}")
+    print(f"Repetitions per instance: {config['runs_per_instance']}")
+    print(
+        f"Selected instances: {total_instances} across {len(selected_instances)} problem sizes"
+    )
+    print()
+
+    for problem_size, instance_names in selected_instances.items():
+        print(f"{problem_size}: {len(instance_names)} instances")
         print("-" * 75)
 
-        cp_times = []
-        ilp_times = []
-        cp_solutions = []
-        ilp_solutions = []
+        for instance_index, instance_name in enumerate(instance_names, start=1):
+            instance_path = normalize_instance_path(problem_size, instance_name)
+            if not instance_path.exists():
+                raise FileNotFoundError(f"Missing instance file: {instance_path}")
 
-        for i, instance_path in enumerate(instances):
-            instance_name = Path(instance_path).stem
-            base_str = f"  [{i+1:03d}/{len(instances):03d}] {instance_name:<12}"
+            for run_number in range(1, config["runs_per_instance"] + 1):
+                run_started_at = datetime.now().isoformat(timespec="seconds")
+                base_label = (
+                    f"  [{instance_index:02d}/{len(instance_names):02d}] {instance_name:<12} "
+                    f"run {run_number:02d}/{config['runs_per_instance']:02d}"
+                )
 
-            # Print live status for CP
-            print(f"{base_str} | Status: Solving CP...          ", end="\r", flush=True)
+                cp_started_at = datetime.now().isoformat(timespec="seconds")
+                print(f"{base_label} | Status: Solving CP... ", end="\r", flush=True)
+                cp_result = solve_instance(
+                    instance_path, DEFAULT_CP_MODEL, DEFAULT_CP_SOLVER
+                )
+                cp_finished_at = datetime.now().isoformat(timespec="seconds")
 
-            # Solve CP with Chuffed
-            cp_time, cp_makespan = solve_instance(
-                instance_path, cp_model, solver_name="chuffed" # TODO check this solvers and compare each of them: or-tools, gecode
-            )
-            cp_times.append(cp_time)
-            cp_solutions.append(cp_makespan)
-            cp_res = (
-                f"{cp_makespan} ({cp_time:.2f}s)"
-                if cp_makespan
-                else f"N/A ({cp_time:.2f}s)"
-            )
+                ilp_started_at = datetime.now().isoformat(timespec="seconds")
+                print(f"{base_label} | Status: Solving ILP...", end="\r", flush=True)
+                ilp_result = solve_instance(
+                    instance_path, DEFAULT_ILP_MODEL, DEFAULT_ILP_SOLVER
+                )
+                ilp_finished_at = datetime.now().isoformat(timespec="seconds")
 
-            # Print live status for ILP
-            print(
-                f"{base_str} | CP: {cp_res:<15} | Status: Solving ILP... ",
-                end="\r",
-                flush=True,
-            )
+                run_finished_at = datetime.now().isoformat(timespec="seconds")
 
-            # Solve ILP with Coin-BC
-            ilp_time, ilp_makespan = solve_instance(
-                instance_path, ilp_model, solver_name="coin-bc" # TODO check this solvers and compare each of them: gurobi (no MZ, check HPC), cplex
-            )
-            ilp_times.append(ilp_time)
-            ilp_solutions.append(ilp_makespan)
-            ilp_res = (
-                f"{ilp_makespan} ({ilp_time:.2f}s)"
-                if ilp_makespan
-                else f"N/A ({ilp_time:.2f}s)"
-            )
+                rows.append(
+                    {
+                        "timestamp": timestamp,
+                        "problem_size": problem_size,
+                        "instance_name": instance_name,
+                        "run_number": run_number,
+                        "runs_per_instance": config["runs_per_instance"],
+                        "cp_solver": DEFAULT_CP_SOLVER,
+                        "cp_model": DEFAULT_CP_MODEL.name,
+                        "cp_started_at": cp_started_at,
+                        "cp_finished_at": cp_finished_at,
+                        "cp_elapsed_seconds": f"{cp_result['elapsed_seconds']:.6f}",
+                        "cp_makespan": cp_result["makespan"],
+                        "cp_status": cp_result["status"],
+                        "cp_error": cp_result["error"],
+                        "ilp_solver": DEFAULT_ILP_SOLVER,
+                        "ilp_model": DEFAULT_ILP_MODEL.name,
+                        "ilp_started_at": ilp_started_at,
+                        "ilp_finished_at": ilp_finished_at,
+                        "ilp_elapsed_seconds": f"{ilp_result['elapsed_seconds']:.6f}",
+                        "ilp_makespan": ilp_result["makespan"],
+                        "ilp_status": ilp_result["status"],
+                        "ilp_error": ilp_result["error"],
+                        "run_started_at": run_started_at,
+                        "run_finished_at": run_finished_at,
+                    }
+                )
 
-            # Finalize the line with both results and clear the status text
-            print(
-                f"{base_str} | CP: {cp_res:<15} | ILP: {ilp_res:<15}                        "
-            )
+                cp_label = (
+                    f"{cp_result['makespan']} ({cp_result['elapsed_seconds']:.2f}s)"
+                    if cp_result["makespan"] is not None
+                    else f"{cp_result['status']} ({cp_result['elapsed_seconds']:.2f}s)"
+                )
+                ilp_label = (
+                    f"{ilp_result['makespan']} ({ilp_result['elapsed_seconds']:.2f}s)"
+                    if ilp_result["makespan"] is not None
+                    else f"{ilp_result['status']} ({ilp_result['elapsed_seconds']:.2f}s)"
+                )
 
-            # Print running averages every 10 iterations
-            if (i + 1) % 10 == 0:
-                avg_cp = sum(cp_times) / len(cp_times)
-                avg_ilp = sum(ilp_times) / len(ilp_times)
-                print(f"    [Running Avg] CP: {avg_cp:.2f}s | ILP: {avg_ilp:.2f}s")
+                print(f"{base_label} | CP: {cp_label:<18} | ILP: {ilp_label:<18}")
 
-        results[problem_set] = {
-            "cp": {"times": cp_times, "makespans": cp_solutions},
-            "ilp": {"times": ilp_times, "makespans": ilp_solutions},
-        }
+    fieldnames = list(rows[0].keys()) if rows else []
+    with results_path.open("w", newline="", encoding="utf-8") as file:
+        writer = csv.DictWriter(file, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
 
-        print(
-            f"  Summary: CP avg={sum(cp_times)/len(cp_times):.2f}s, ILP avg={sum(ilp_times)/len(ilp_times):.2f}s"
-        )
+    cp_times = [float(row["cp_elapsed_seconds"]) for row in rows]
+    ilp_times = [float(row["ilp_elapsed_seconds"]) for row in rows]
 
     print("\n" + "=" * 75)
     print("OVERALL SUMMARY")
     print("=" * 75)
-
-    all_cp = []
-    all_ilp = []
-    for ps, data in results.items():
-        all_cp.extend(data["cp"]["times"])
-        all_ilp.extend(data["ilp"]["times"])
-
-    print(f"Total instances: {len(all_cp)}")
+    print(f"Total instance-run pairs: {len(rows)}")
     print(
-        f"CP  - Total: {sum(all_cp):.2f}s, Avg: {sum(all_cp)/len(all_cp):.2f}s, Min: {min(all_cp):.2f}s, Max: {max(all_cp):.2f}s"
+        f"CP  - Total: {sum(cp_times):.2f}s, Avg: {sum(cp_times) / len(cp_times):.2f}s, Min: {min(cp_times):.2f}s, Max: {max(cp_times):.2f}s"
     )
     print(
-        f"ILP - Total: {sum(all_ilp):.2f}s, Avg: {sum(all_ilp)/len(all_ilp):.2f}s, Min: {min(all_ilp):.2f}s, Max: {max(all_ilp):.2f}s"
+        f"ILP - Total: {sum(ilp_times):.2f}s, Avg: {sum(ilp_times) / len(ilp_times):.2f}s, Min: {min(ilp_times):.2f}s, Max: {max(ilp_times):.2f}s"
     )
+    print(f"\nSaved results to {results_path}")
+    print(f"Saved hardware characteristics to {hardware_path}")
+    print(f"Saved selected-instance snapshot to {config_snapshot_path}")
 
 
 if __name__ == "__main__":
