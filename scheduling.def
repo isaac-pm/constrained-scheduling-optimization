@@ -12,28 +12,56 @@ From: python:3.11-slim
     requirements.txt /opt/requirements.txt
 
 %post
-    # 1. Update packages and install necessary tools for downloading and extracting
+    # 1. Update packages and install necessary tools
     apt-get update
     apt-get install -y wget tar ca-certificates
     rm -rf /var/lib/apt/lists/*
 
-    # 2. Define version variables
+    # 2. Install MiniZinc 2.9.5
     MZ_VERSION="2.9.5"
     MZ_ARCHIVE="MiniZincIDE-${MZ_VERSION}-bundle-linux-x86_64.tgz"
-    
-    # The standard release URL for MiniZinc GitHub
     MZ_URL="https://github.com/MiniZinc/MiniZincIDE/releases/download/${MZ_VERSION}/${MZ_ARCHIVE}"
-
-    # 3. Download and extract the archive into /opt
+    
     cd /opt
     wget -q "${MZ_URL}"
     tar -xzf "${MZ_ARCHIVE}"
     rm "${MZ_ARCHIVE}"
-
-    # 4. Create a generic symlink to avoid hardcoding the version path in the environment
     ln -s "/opt/MiniZincIDE-${MZ_VERSION}-bundle-linux-x86_64" /opt/minizinc
 
-    # 5. Install Python dependencies globally inside the container
+    # 3. Install OR-Tools (Using Debian 11/12 binaries to match python-slim)
+    ORT_VERSION="9.11"
+    ORT_REV="4210"
+    ORT_ARCHIVE="or-tools_amd64_flatzinc_debian-11_v${ORT_VERSION}.${ORT_REV}.tar.gz"
+    ORT_URL="https://github.com/google/or-tools/releases/download/v${ORT_VERSION}/${ORT_ARCHIVE}"
+
+    wget -q "${ORT_URL}"
+    tar -xzf "${ORT_ARCHIVE}"
+    rm "${ORT_ARCHIVE}"
+    
+    # Create a clean symlink for OR-Tools
+    ln -s "/opt/or-tools_flatzinc_debian-11_v${ORT_VERSION}.${ORT_REV}" /opt/ortools
+
+    # 4. Wire OR-Tools into MiniZinc's global configuration
+    # We place the .msc file directly inside MiniZinc's share directory so it is discovered automatically
+    cat <<EOF > /opt/minizinc/share/minizinc/solvers/or-tools.msc
+{
+  "id": "cp-sat",
+  "name": "OR-Tools",
+  "description": "OR Tools CP-SAT Solver",
+  "version": "${ORT_VERSION}.${ORT_REV}",
+  "executable": "/opt/ortools/bin/fzn-or-tools",
+  "tags": ["cp", "int"],
+  "stdFlags": ["-a", "-n", "-s", "-v", "-p", "-f", "-t"],
+  "supportsMzn": false,
+  "supportsFzn": true,
+  "needsSolns2Out": true,
+  "needsMznExecutable": false,
+  "needsStdlibDir": false,
+  "isGUIApplication": false
+}
+EOF
+
+    # 5. Install Python dependencies
     pip install --no-cache-dir --upgrade pip
     pip install --no-cache-dir -r /opt/requirements.txt
 

@@ -102,3 +102,14 @@ You can also submit the provided Slurm batch script:
 ```bash
 sbatch run_benchmark.sbatch
 ```
+
+### Solvers
+
+| Solver   | Strategy | Available?             |
+| -------- | -------- | ---------------------- |
+| Coin-BC  | ILP      | Yes                    |
+| Gurobi   | ILP      | Yes (Load from module) |
+| CPLEX    | ILP      | No                     |
+| Chuffed  | CP       | Yes                    |
+| Gecode   | CP       | Yes                    |
+| OR-Tools | CP       | Yes (Dowloaded manually) |

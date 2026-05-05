@@ -18,9 +18,11 @@ DEFAULT_CONFIG_PATH = BASE_DIR / "instance_config.yaml"
 DEFAULT_OUTPUT_DIR = Path.cwd() / "results"
 DEFAULT_CP_MODEL = BASE_DIR / "rcpsp_cp.mzn"
 DEFAULT_ILP_MODEL = BASE_DIR / "rcpsp_ilp.mzn"
-DEFAULT_CP_SOLVER = "chuffed"
-DEFAULT_ILP_SOLVER = "coin-bc"
 TIMEOUT_MINUTES = 1
+SOLVERS = {
+    "cp": ["chuffed", "gecode", "ortools"],
+    "ilp": ["coin-bc", "gurobi"],
+}
 
 
 def parse_args():
@@ -391,68 +393,55 @@ def main():
                 raise FileNotFoundError(f"Missing instance file: {instance_path}")
 
             for run_number in range(1, config["runs_per_instance"] + 1):
-                run_started_at = datetime.now().isoformat(timespec="seconds")
                 base_label = (
                     f"  [{instance_index:02d}/{len(instance_names):02d}] {instance_name:<12} "
                     f"run {run_number:02d}/{config['runs_per_instance']:02d}"
                 )
 
-                cp_started_at = datetime.now().isoformat(timespec="seconds")
-                print(f"{base_label} | Status: Solving CP... ", end="\r", flush=True)
-                cp_result = solve_instance(
-                    instance_path, DEFAULT_CP_MODEL, DEFAULT_CP_SOLVER
-                )
-                cp_finished_at = datetime.now().isoformat(timespec="seconds")
-
-                ilp_started_at = datetime.now().isoformat(timespec="seconds")
-                print(f"{base_label} | Status: Solving ILP...", end="\r", flush=True)
-                ilp_result = solve_instance(
-                    instance_path, DEFAULT_ILP_MODEL, DEFAULT_ILP_SOLVER
-                )
-                ilp_finished_at = datetime.now().isoformat(timespec="seconds")
-
                 run_finished_at = datetime.now().isoformat(timespec="seconds")
 
-                rows.append(
-                    {
-                        "timestamp": timestamp,
-                        "problem_size": problem_size,
-                        "instance_name": instance_name,
-                        "run_number": run_number,
-                        "runs_per_instance": config["runs_per_instance"],
-                        "cp_solver": DEFAULT_CP_SOLVER,
-                        "cp_model": DEFAULT_CP_MODEL.name,
-                        "cp_started_at": cp_started_at,
-                        "cp_finished_at": cp_finished_at,
-                        "cp_elapsed_seconds": f"{cp_result['elapsed_seconds']:.6f}",
-                        "cp_makespan": cp_result["makespan"],
-                        "cp_status": cp_result["status"],
-                        "cp_error": cp_result["error"],
-                        "ilp_solver": DEFAULT_ILP_SOLVER,
-                        "ilp_model": DEFAULT_ILP_MODEL.name,
-                        "ilp_started_at": ilp_started_at,
-                        "ilp_finished_at": ilp_finished_at,
-                        "ilp_elapsed_seconds": f"{ilp_result['elapsed_seconds']:.6f}",
-                        "ilp_makespan": ilp_result["makespan"],
-                        "ilp_status": ilp_result["status"],
-                        "ilp_error": ilp_result["error"],
-                        "run_started_at": run_started_at,
-                        "run_finished_at": run_finished_at,
-                    }
-                )
+                summary_labels = []
+                for paradigm, solver_list in SOLVERS.items():
+                    model_path = (
+                        DEFAULT_CP_MODEL if paradigm == "cp" else DEFAULT_ILP_MODEL
+                    )
+                    for solver_name in solver_list:
+                        started_at = datetime.now().isoformat(timespec="seconds")
+                        print(
+                            f"{base_label} | Status: Solving {paradigm.upper()}:{solver_name}...",
+                            end="\r",
+                            flush=True,
+                        )
+                        result = solve_instance(instance_path, model_path, solver_name)
+                        finished_at = datetime.now().isoformat(timespec="seconds")
 
-                cp_label = (
-                    f"{cp_result['makespan']} ({cp_result['elapsed_seconds']:.2f}s)"
-                    if cp_result["makespan"] is not None
-                    else f"{cp_result['status']} ({cp_result['elapsed_seconds']:.2f}s)"
-                )
-                ilp_label = (
-                    f"{ilp_result['makespan']} ({ilp_result['elapsed_seconds']:.2f}s)"
-                    if ilp_result["makespan"] is not None
-                    else f"{ilp_result['status']} ({ilp_result['elapsed_seconds']:.2f}s)"
-                )
+                        rows.append(
+                            {
+                                "timestamp": timestamp,
+                                "problem_size": problem_size,
+                                "instance_name": instance_name,
+                                "run_number": run_number,
+                                "runs_per_instance": config["runs_per_instance"],
+                                "paradigm": paradigm,
+                                "solver": solver_name,
+                                "model": model_path.name,
+                                "started_at": started_at,
+                                "finished_at": finished_at,
+                                "elapsed_seconds": f"{result['elapsed_seconds']:.6f}",
+                                "makespan": result["makespan"],
+                                "status": result["status"],
+                                "error": result["error"],
+                            }
+                        )
 
-                print(f"{base_label} | CP: {cp_label:<18} | ILP: {ilp_label:<18}")
+                        label = (
+                            f"{result['makespan']} ({result['elapsed_seconds']:.2f}s)"
+                            if result["makespan"] is not None
+                            else f"{result['status']} ({result['elapsed_seconds']:.2f}s)"
+                        )
+                        summary_labels.append(f"{paradigm.upper()}:{solver_name} {label}")
+
+                print(f"{base_label} | " + " | ".join(summary_labels))
 
     fieldnames = list(rows[0].keys()) if rows else []
     with results_path.open("w", newline="", encoding="utf-8") as file:
@@ -460,19 +449,19 @@ def main():
         writer.writeheader()
         writer.writerows(rows)
 
-    cp_times = [float(row["cp_elapsed_seconds"]) for row in rows]
-    ilp_times = [float(row["ilp_elapsed_seconds"]) for row in rows]
-
     print("\n" + "=" * 75)
     print("OVERALL SUMMARY")
     print("=" * 75)
     print(f"Total instance-run pairs: {len(rows)}")
-    print(
-        f"CP  - Total: {sum(cp_times):.2f}s, Avg: {sum(cp_times) / len(cp_times):.2f}s, Min: {min(cp_times):.2f}s, Max: {max(cp_times):.2f}s"
-    )
-    print(
-        f"ILP - Total: {sum(ilp_times):.2f}s, Avg: {sum(ilp_times) / len(ilp_times):.2f}s, Min: {min(ilp_times):.2f}s, Max: {max(ilp_times):.2f}s"
-    )
+    solver_times = {}
+    for row in rows:
+        solver = row["solver"]
+        solver_times.setdefault(solver, []).append(float(row["elapsed_seconds"]))
+
+    for solver_name, times in sorted(solver_times.items()):
+        print(
+            f"{solver_name:<8} - Total: {sum(times):.2f}s, Avg: {sum(times) / len(times):.2f}s, Min: {min(times):.2f}s, Max: {max(times):.2f}s"
+        )
     print(f"\nSaved results to {results_path}")
     print(f"Saved hardware characteristics to {hardware_path}")
     print(f"Saved selected-instance snapshot to {config_snapshot_path}")
