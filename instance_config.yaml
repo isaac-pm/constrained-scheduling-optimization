@@ -21,4 +21,4 @@ instances:
     - j1201_3
 
 # Number of runs per instance for statistical significance
-runs_per_instance: 3
+runs_per_instance: 1
