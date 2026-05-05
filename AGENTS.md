@@ -2,39 +2,21 @@
 
 ## Environment
 
-- Python venv: `env/` (create with `python -m venv env`, activate with `source env/bin/activate`)
-- Dependencies: `minizinc==0.10.0`, `psplib==0.4.0`
-- Install: `pip install -r requirements.txt`
+- Use a local venv at `.venv/` (README uses `python -m venv ./.venv`), then `pip install -r requirements.txt`.
+- Required Python deps are only those in `requirements.txt` (minizinc, psplib, PyYAML).
+- MiniZinc solvers `chuffed` (CP) and `coin-bc` (ILP) must be installed and on PATH.
 
-## Running
+## Running + outputs
 
-```bash
-python run.py
-```
+- `python run.py` runs the benchmark; it reads `instance_config.yaml` for instance selection and run counts.
+- Benchmark outputs are written to `results/` as timestamped `*-results.csv`, `*-hardware.json`, and `*-config.yaml` files.
+- `run.py` uses `rcpsp_cp.mzn` (faster, chuffed) and `rcpsp_ilp.mzn` (slower, coin-bc).
 
-`run.py` benchmarks both RCPSP models on all PSPLIB SM-format instances:
-- `rcpsp_cp.mzn` - Constraint Programming formulation (faster, uses `chuffed` solver)
-- `rcpsp_ilp.mzn` - Integer Linear Programming formulation (slower, uses `coin-bc` solver)
+## Data + parsing
 
-## Data
-
-Benchmark instances are PSPLIB format (`.sm` files) in `data/`. The directory contains j30, j60, j90, and j120 problem sets. Load with:
-
-```python
-from psplib import parse
-instance = parse("data/j30.sm/j301_1.sm", instance_format="psplib")
-```
-
-Note: psplib uses 0-based indexing for successors (indices into activities array), MiniZinc uses 1-based. The `parse_sm_file` function in `run.py` handles this conversion.
-
-## Models
-
-- `model.mzn` - n-Queens example (not an RCPSP model)
-- `rcpsp_cp.mzn` - CP formulation with cumulative resource constraints
-- `rcpsp_ilp.mzn` - ILP formulation with time-indexed binary variables
+- PSPLIB `.sm` instances live under `data/` (j30/j60/j90/j120).
+- psplib is 0-based but MiniZinc is 1-based; `parse_sm_file` in `run.py` converts indices.
 
 ## Notes
 
-- `papers/` contains reference papers for RCPSP algorithms
-- No test suite, linting, or CI configured
-- MiniZinc solvers (chuffed, coin-bc) must be installed separately and visible in PATH
+- No tests, linting, or CI workflows are configured.

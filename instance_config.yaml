@@ -5,20 +5,33 @@
 instances:
   j30:
     - j301_1
-    - j301_2
-    - j301_3
+    # - j301_2
+    # - j301_3
+    - j302_1
+    # - j302_2
+    # - j302_3
+    - j303_1
+    # - j303_2
+    # - j303_3
+    - j304_1
+    # - j304_2
+    # - j304_3
+
   j60:
     - j601_1
-    - j601_2
-    - j601_3
+    - j602_1
+    - j603_1
+    - j604_1
   j90:
     - j901_1
-    - j901_2
-    - j901_3
+    - j902_1
+    - j903_1
+    - j904_1
   j120:
     - j1201_1
-    - j1201_2
-    - j1201_3
+    - j1202_1
+    - j1203_1
+    - j1204_1
 
 # Number of runs per instance for statistical significance
-runs_per_instance: 1
+runs_per_instance: 3

@@ -5,10 +5,38 @@
 
 int: n;
 int: horizon;
+int: num_resources;
 array[1..n] of int: duration;
-array[1..n, 1..4] of int: resource_usage;
-array[1..4] of int: capacity;
+array[1..n, 1..num_resources] of int: resource_usage;
+array[1..num_resources] of int: capacity;
 array[1..n] of set of int: successors;
+
+% =============================================================================
+% DERIVED BOUNDS (EST/LST)
+% =============================================================================
+
+array[1..n] of set of int: predecessors = [ {i | i in 1..n where j in successors[i]} | j in 1..n ];
+
+function int: est_fun(int: j) =
+    if card(predecessors[j]) = 0 then
+        0
+    else
+        max(i in predecessors[j])(est_fun(i) + duration[i])
+    endif;
+
+array[1..n] of int: est = [ est_fun(j) | j in 1..n ];
+int: cpm_lb = max(j in 1..n)(est[j] + duration[j]);
+
+function int: lst_fun(int: j) =
+    if card(successors[j]) = 0 then
+        horizon - duration[j]
+    else
+        min(s in successors[j])(lst_fun(s) - duration[j])
+    endif;
+
+array[1..n] of int: lst = [ lst_fun(j) | j in 1..n ];
+
+int: ub = max(j in 1..n)(lst[j] + duration[j]);
 
 % =============================================================================
 % DECISION VARIABLES
@@ -22,7 +50,7 @@ array[1..n] of set of int: successors;
 array[1..n, 0..horizon] of var 0..1: x;
 
 % The overall end time of the project.
-var 0..horizon: makespan;
+var cpm_lb..ub: makespan;
 
 % =============================================================================
 % RULES (Constraints)
@@ -33,55 +61,40 @@ var 0..horizon: makespan;
 % the total must be exactly 1. This forces the activity to start exactly once.
 constraint
     forall(j in 1..n) (
-        sum(t in 0..horizon)(x[j, t]) = 1
+        sum(t in est[j]..lst[j])(x[j, t]) = 1
     );
 
-% RULE 2: Stay within the time limit.
-% For each activity, we calculate its actual start time by multiplying the time slot 't' 
-% by its yes/no switch. (Since only one switch is 1, all others become 0).
-% We then add its duration. The result must fit within the horizon.
+% RULE 1b: Fix out-of-window binaries.
 constraint
-    forall(j in 1..n) (
-        sum(t in 0..horizon)(t * x[j, t]) + duration[j] <= horizon + 1
+    forall(j in 1..n, t in 0..horizon) (
+        if t < est[j] \/ t > lst[j] then x[j, t] = 0 else true endif
     );
 
-% RULE 3: Respect the order of operations.
-% Just like Rule 2, we calculate the finish time of an activity.
-% We then calculate the start time of its successor using the same trick.
-% The finish time of the first must be less than or equal to the start time of the second.
+% RULE 3: Respect the order of operations (Strong LP Step Formulation)
 constraint
     forall(j in 1..n, s in successors[j]) (
-        sum(t in 0..horizon)(t * x[j, t]) + duration[j] <= sum(t in 0..horizon)(t * x[s, t])
-    );
-
-% RULE 4: Define the final project end time (Linearized).
-% Since ILP struggles with the "max()" function, we do this differently.
-% We state that the project's overall end time must be greater than or equal to 
-% the finish time of EVERY single activity. 
-% When the solver tries to minimize the makespan, it will push this number down 
-% until it hits the finish time of the very last activity.
-constraint
-    forall(j in 1..n)(
-        makespan >= sum(t in 0..horizon)(t * x[j, t]) + duration[j]
-    );
-
-% RULE 5: Do not run out of resources.
-% We check every single resource, at every single moment in time.
-constraint
-    forall(r in 1..4) (
-        forall(t in 0..horizon) (
-            % To figure out if an activity is running at time 't', we look backwards.
-            % We check the time slots just before 't' to see if the activity started 
-            % recently enough that it would still be going on right now.
-            sum(j in 1..n)(
-                resource_usage[j, r] * % Add up the yes/no switches for the start times that would overlap with 't'.
-                % If it started in this window, this sum is 1, so we add its resource usage.
-                % If it didn't, the sum is 0, so it uses 0 resources.
-                sum(tt in max(0, t-duration[j]+1)..t)(x[j, tt])
-            ) <= capacity[r] % The total cannot exceed what is available.
+        forall(t in est[s]..lst[s]) (
+            sum(tau in est[s]..t)(x[s, tau])
+            <=
+            sum(tau in est[j]..min(t - duration[j], lst[j]))(x[j, tau])
         )
     );
 
+% RULE 4: Define the final project end time (Optimized for PSPLIB)
+% Node 'n' is the dummy sink. Its start time is the exact makespan.
+constraint
+    makespan = sum(t in est[n]..lst[n])(t * x[n, t]);
+
+% RULE 5: Do not run out of resources (Sparse formulation)
+constraint
+    forall(r in 1..num_resources) (
+        forall(t in 0..horizon) (
+            sum(j in 1..n where resource_usage[j, r] > 0)(
+                resource_usage[j, r] *
+                sum(tt in max(0, t-duration[j]+1)..t)(x[j, tt])
+            ) <= capacity[r]
+        )
+    );
 % =============================================================================
 % GOAL
 % =============================================================================

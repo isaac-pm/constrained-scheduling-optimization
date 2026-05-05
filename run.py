@@ -1,4 +1,5 @@
 import argparse
+import collections
 import csv
 import json
 import os
@@ -6,12 +7,11 @@ import platform
 import subprocess
 import tempfile
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import yaml
 from psplib import parse
-
 
 BASE_DIR = Path(__file__).resolve().parent
 DEFAULT_CONFIG_PATH = BASE_DIR / "instance_config.yaml"
@@ -20,6 +20,7 @@ DEFAULT_CP_MODEL = BASE_DIR / "rcpsp_cp.mzn"
 DEFAULT_ILP_MODEL = BASE_DIR / "rcpsp_ilp.mzn"
 DEFAULT_CP_SOLVER = "chuffed"
 DEFAULT_ILP_SOLVER = "coin-bc"
+TIMEOUT_MINUTES = 1
 
 
 def parse_args():
@@ -39,21 +40,118 @@ def parse_args():
     return parser.parse_args()
 
 
+def calculate_greedy_horizon(data, topological_order):
+    """Computes a fast upper bound using a greedy parallel schedule."""
+    n = data["n"]
+    durations = data["duration"]
+    reqs = data["resource_usage"]
+    caps = data["capacity"]
+    successors = data["successors"]
+
+    preds = [[] for _ in range(n)]
+    indegree = [0] * n
+    for u, succs in enumerate(successors):
+        for v in succs:
+            v_idx = v - 1
+            preds[v_idx].append(u)
+            indegree[v_idx] += 1
+
+    start_times = [-1] * n
+    finish_times = [-1] * n
+    current_time = 0
+    active_tasks = []
+    completed = set()
+
+    while len(completed) < n:
+        active_tasks = [
+            task for task in active_tasks if finish_times[task] > current_time
+        ]
+
+        available_res = list(caps)
+        for task in active_tasks:
+            for r in range(len(caps)):
+                available_res[r] -= reqs[task][r]
+
+        progress_made = False
+        for task in topological_order:
+            if start_times[task] != -1:
+                continue
+
+            if all(p in completed for p in preds[task]):
+                if all(reqs[task][r] <= available_res[r] for r in range(len(caps))):
+                    start_times[task] = current_time
+                    finish_times[task] = current_time + durations[task]
+                    active_tasks.append(task)
+
+                    for r in range(len(caps)):
+                        available_res[r] -= reqs[task][r]
+
+                    progress_made = True
+
+        if active_tasks:
+            next_time = min(finish_times[task] for task in active_tasks)
+            for task in active_tasks:
+                if finish_times[task] == next_time:
+                    completed.add(task)
+            current_time = next_time
+        elif not progress_made and len(completed) < n:
+            break
+
+    return max(finish_times) if max(finish_times) > 0 else sum(durations)
+
+
 def parse_sm_file(filepath):
     inst = parse(filepath, instance_format="psplib")
     n = len(inst.activities)
-    horizon = sum(a.modes[0].duration for a in inst.activities)
+    durations = [a.modes[0].duration for a in inst.activities]
+    successors_zero_based = [list(a.successors) for a in inst.activities]
+    predecessors = [[] for _ in inst.activities]
+    indegree = [0 for _ in inst.activities]
+    for pred_index, succs in enumerate(successors_zero_based):
+        for succ_index in succs:
+            predecessors[succ_index].append(pred_index)
+            indegree[succ_index] += 1
+
+    queue = collections.deque(i for i, degree in enumerate(indegree) if degree == 0)
+    topological_order = []
+    while queue:
+        node = queue.popleft()
+        topological_order.append(node)
+        for succ in successors_zero_based[node]:
+            indegree[succ] -= 1
+            if indegree[succ] == 0:
+                queue.append(succ)
+
+    earliest_finish = [0 for _ in inst.activities]
+    for node in topological_order:
+        if predecessors[node]:
+            earliest_start = max(earliest_finish[pred] for pred in predecessors[node])
+        else:
+            earliest_start = 0
+        earliest_finish[node] = earliest_start + durations[node]
+
+    num_resources = len(inst.resources)
 
     duration = [a.modes[0].duration for a in inst.activities]
     resource_usage = [
-        [a.modes[0].demands[r] for r in range(4)] for a in inst.activities
+        [a.modes[0].demands[r] for r in range(num_resources)] for a in inst.activities
     ]
     capacity = [r.capacity for r in inst.resources]
     successors = [[s + 1 for s in a.successors] for a in inst.activities]
 
+    data_dict = {
+        "n": n,
+        "duration": duration,
+        "resource_usage": resource_usage,
+        "capacity": capacity,
+        "successors": successors,
+    }
+    horizon = calculate_greedy_horizon(data_dict, topological_order)
+
     return {
         "n": n,
         "horizon": horizon,
+        "num_resources": num_resources,
         "duration": duration,
         "resource_usage": resource_usage,
         "capacity": capacity,
@@ -67,6 +165,7 @@ def generate_dzn(data, output_path):
     with output_path.open("w", encoding="utf-8") as file:
         file.write(f"n = {data['n']};\n")
         file.write(f"horizon = {data['horizon']};\n")
+        file.write(f"num_resources = {data['num_resources']};\n")
         file.write(f"duration = {data['duration']};\n")
         ru_rows = [", ".join(str(x) for x in ru) for ru in data["resource_usage"]]
         sparse_array = "[| " + " | ".join(ru_rows) + " |]"
@@ -121,7 +220,7 @@ def solve_instance(instance_path, model_path, solver_name):
         solver = Solver.lookup(solver_name)
         instance = Instance(solver, model)
         instance.add_file(str(dzn_path))
-        result = instance.solve()
+        result = instance.solve(timeout=timedelta(minutes=TIMEOUT_MINUTES))
         elapsed = time.perf_counter() - start_time
 
         if result.solution is None:
@@ -140,6 +239,7 @@ def solve_instance(instance_path, model_path, solver_name):
         }
     except Exception as exc:
         elapsed = time.perf_counter() - start_time
+        print(f"Error solving {instance_path} with {model_path} on {solver_name}: {exc}")
         return {
             "elapsed_seconds": elapsed,
             "makespan": None,
