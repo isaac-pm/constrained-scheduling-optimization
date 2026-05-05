@@ -3,7 +3,7 @@ From: python:3.11-slim
 
 %labels
     Author System
-    Software MiniZinc & Python
+    Software MiniZinc, Python & OR-Tools
     Version 2.9.5
     OS Debian (Python 3.11-slim)
 
@@ -14,7 +14,7 @@ From: python:3.11-slim
 %post
     # 1. Update packages and install necessary tools
     apt-get update
-    apt-get install -y wget tar ca-certificates
+    apt-get install -y wget tar ca-certificates libgl1 libglib2.0-0
     rm -rf /var/lib/apt/lists/*
 
     # 2. Install MiniZinc 2.9.5
@@ -28,28 +28,28 @@ From: python:3.11-slim
     rm "${MZ_ARCHIVE}"
     ln -s "/opt/MiniZincIDE-${MZ_VERSION}-bundle-linux-x86_64" /opt/minizinc
 
-    # 3. Install OR-Tools (Using Debian 11/12 binaries to match python-slim)
-    ORT_VERSION="9.11"
-    ORT_REV="4210"
-    ORT_ARCHIVE="or-tools_amd64_flatzinc_debian-11_v${ORT_VERSION}.${ORT_REV}.tar.gz"
+    # 3. Install OR-Tools 9.15.6755 (Debian 12 C++ binaries to match python:3.11-slim)
+    ORT_VERSION="9.15"
+    ORT_REV="6755"
+    ORT_ARCHIVE="or-tools_amd64_debian-12_cpp_v${ORT_VERSION}.${ORT_REV}.tar.gz"
     ORT_URL="https://github.com/google/or-tools/releases/download/v${ORT_VERSION}/${ORT_ARCHIVE}"
 
+    cd /opt
     wget -q "${ORT_URL}"
-    tar -xzf "${ORT_ARCHIVE}"
-    rm "${ORT_ARCHIVE}"
     
-    # Create a clean symlink for OR-Tools
-    ln -s "/opt/or-tools_flatzinc_debian-11_v${ORT_VERSION}.${ORT_REV}" /opt/ortools
+    # Create a clean directory and extract the archive into it
+    mkdir -p /opt/ortools
+    tar -xzf "${ORT_ARCHIVE}" -C /opt/ortools --strip-components=1
+    rm "${ORT_ARCHIVE}"
 
     # 4. Wire OR-Tools into MiniZinc's global configuration
-    # We place the .msc file directly inside MiniZinc's share directory so it is discovered automatically
     cat <<EOF > /opt/minizinc/share/minizinc/solvers/or-tools.msc
 {
   "id": "cp-sat",
   "name": "OR-Tools",
   "description": "OR Tools CP-SAT Solver",
   "version": "${ORT_VERSION}.${ORT_REV}",
-  "executable": "/opt/ortools/bin/fzn-or-tools",
+  "executable": "/opt/ortools/bin/fzn-ortools",
   "tags": ["cp", "int"],
   "stdFlags": ["-a", "-n", "-s", "-v", "-p", "-f", "-t"],
   "supportsMzn": false,
@@ -66,13 +66,14 @@ EOF
     pip install --no-cache-dir -r /opt/requirements.txt
 
 %environment
-    # Ensure correct encoding for Python terminal output
     export LC_ALL=C.UTF-8
     export LANG=C.UTF-8
 
-    # Ensure the MiniZinc binaries and bundled libraries are discoverable
-    export PATH="/opt/minizinc/bin:${PATH}"
-    export LD_LIBRARY_PATH="/opt/minizinc/lib:${LD_LIBRARY_PATH}"
+    # Expose MiniZinc and OR-Tools binaries
+    export PATH="/opt/minizinc/bin:/opt/ortools/bin:${PATH}"
+    
+    # Expose both MiniZinc and OR-Tools shared libraries so the C++ solver runs correctly
+    export LD_LIBRARY_PATH="/opt/minizinc/lib:/opt/ortools/lib:${LD_LIBRARY_PATH}"
 
 %runscript
     # The default command executed when the container runs

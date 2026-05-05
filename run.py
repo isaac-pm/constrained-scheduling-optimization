@@ -20,7 +20,7 @@ DEFAULT_CP_MODEL = BASE_DIR / "rcpsp_cp.mzn"
 DEFAULT_ILP_MODEL = BASE_DIR / "rcpsp_ilp.mzn"
 TIMEOUT_MINUTES = 1
 SOLVERS = {
-    "cp": ["chuffed", "gecode", "ortools"],
+    "cp": ["chuffed", "gecode", "cp-sat"],
     "ilp": ["coin-bc", "gurobi"],
 }
 
@@ -220,6 +220,11 @@ def solve_instance(instance_path, model_path, solver_name):
     try:
         model = Model(str(model_path))
         solver = Solver.lookup(solver_name)
+        if solver_name == "gurobi":
+            solver.extra_flags = [
+                "--gurobi-dll",
+                "/opt/gurobi/lib/libgurobi120.so",
+            ]
         instance = Instance(solver, model)
         instance.add_file(str(dzn_path))
         result = instance.solve(timeout=timedelta(minutes=TIMEOUT_MINUTES))

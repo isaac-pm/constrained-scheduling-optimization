@@ -112,4 +112,4 @@ sbatch run_benchmark.sbatch
 | CPLEX    | ILP      | No                     |
 | Chuffed  | CP       | Yes                    |
 | Gecode   | CP       | Yes                    |
-| OR-Tools | CP       | Yes (Dowloaded manually) |
+| OR-Tools (cpsat) | CP       | Yes (Dowloaded manually) |
