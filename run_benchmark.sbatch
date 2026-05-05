@@ -52,5 +52,4 @@ if [[ ! -f scheduling.sif ]]; then
     exit 1
 fi
 
-echo "Starting benchmark with Gurobi bound from host on an exclusive node..."
 apptainer run --userns scheduling.sif

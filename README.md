@@ -94,7 +94,15 @@ apptainer run --userns scheduling.sif
 Open an interactive shell inside the container:
 
 ```bash
+module purge
+module --ignore_cache load env/development/2024a
+module load tools/Apptainer/1.4.1
+module load math/Gurobi/12.0.1-GCCcore-13.3.0
+export APPTAINER_BIND="$EBROOTGUROBI:/opt/gurobi"
+export APPTAINERENV_PREPEND_LD_LIBRARY_PATH="/opt/gurobi/lib"
+export APPTAINERENV_GRB_LICENSE_FILE="${GRB_LICENSE_FILE:-/opt/gurobi/gurobi.lic}"
 apptainer shell --userns scheduling.sif
+python run.py
 ```
 
 You can also submit the provided Slurm batch script:

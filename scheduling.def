@@ -14,7 +14,7 @@ From: python:3.11-slim
 %post
     # 1. Update packages and install necessary tools
     apt-get update
-    apt-get install -y wget tar ca-certificates libgl1 libglib2.0-0
+    apt-get install -y wget tar ca-certificates libgl1 libglib2.0-0 libegl1
     rm -rf /var/lib/apt/lists/*
 
     # 2. Install MiniZinc 2.9.5
