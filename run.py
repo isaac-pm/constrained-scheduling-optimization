@@ -232,7 +232,7 @@ def solve_instance(instance_path, model_path, solver_name):
 
         solve_kwargs = {"timeout": timedelta(minutes=TIMEOUT_MINUTES)}
         if solver_name == "gurobi":
-            solve_kwargs["gurobi_dll"] = "/opt/gurobi/lib/libgurobi120.so"
+            solve_kwargs["gurobi-dll"] = "/opt/gurobi/lib/libgurobi120.so"
 
         result = instance.solve(**solve_kwargs)
         elapsed = time.perf_counter() - start_time
@@ -253,7 +253,9 @@ def solve_instance(instance_path, model_path, solver_name):
         }
     except Exception as exc:
         elapsed = time.perf_counter() - start_time
-        print(f"Error solving {instance_path} with {model_path} on {solver_name}: {exc}")
+        print(
+            f"Error solving {instance_path} with {model_path} on {solver_name}: {exc}"
+        )
         return {
             "elapsed_seconds": elapsed,
             "makespan": None,
@@ -451,7 +453,9 @@ def main():
                             if result["makespan"] is not None
                             else f"{result['status']} ({result['elapsed_seconds']:.2f}s)"
                         )
-                        summary_labels.append(f"{paradigm.upper()}:{solver_name} {label}")
+                        summary_labels.append(
+                            f"{paradigm.upper()}:{solver_name} {label}"
+                        )
 
                 print(f"{base_label} | " + " | ".join(summary_labels))
 

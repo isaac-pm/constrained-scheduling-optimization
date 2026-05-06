@@ -100,7 +100,7 @@ module load tools/Apptainer/1.4.1
 module load math/Gurobi/12.0.1-GCCcore-13.3.0
 export APPTAINER_BIND="$EBROOTGUROBI:/opt/gurobi"
 export APPTAINERENV_PREPEND_LD_LIBRARY_PATH="/opt/gurobi/lib"
-export APPTAINERENV_GRB_LICENSE_FILE="${GRB_LICENSE_FILE:-/opt/gurobi/gurobi.lic}"
+export APPTAINERENV_GRB_LICENSE_FILE="/opt/gurobi/gurobi.lic"
 apptainer shell --userns scheduling.sif
 python run.py
 ```

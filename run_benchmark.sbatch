@@ -37,12 +37,10 @@ fi
 export APPTAINER_BIND="$EBROOTGUROBI:/opt/gurobi"
 
 # Inject Gurobi binaries and libraries into the container's execution paths
-export APPTAINERENV_PREPEND_PATH="/opt/gurobi/bin"
 export APPTAINERENV_PREPEND_LD_LIBRARY_PATH="/opt/gurobi/lib"
 
 # Pass the cluster's Gurobi license file into the container
-# Using :- to avoid a crash if the cluster doesn't export this by default
-export APPTAINERENV_GRB_LICENSE_FILE="${GRB_LICENSE_FILE:-/opt/gurobi/gurobi.lic}"
+export APPTAINERENV_GRB_LICENSE_FILE="/opt/gurobi/gurobi.lic"
 
 # 5. Execute the benchmark script
 cd "${SLURM_SUBMIT_DIR:-$PWD}"
