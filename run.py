@@ -220,14 +220,12 @@ def solve_instance(instance_path, model_path, solver_name):
     try:
         model = Model(str(model_path))
         solver = Solver.lookup(solver_name)
-        if solver_name == "gurobi":
-            solver.extra_flags = [
-                "--gurobi-dll",
-                "/opt/gurobi/lib/libgurobi120.so",
-            ]
         instance = Instance(solver, model)
         instance.add_file(str(dzn_path))
-        result = instance.solve(timeout=timedelta(minutes=TIMEOUT_MINUTES))
+        solve_kwargs = {"timeout": timedelta(minutes=TIMEOUT_MINUTES)}
+        if solver_name == "gurobi":
+            solve_kwargs["gurobi_dll"] = "/opt/gurobi/lib/libgurobi120.so"
+        result = instance.solve(**solve_kwargs)
         elapsed = time.perf_counter() - start_time
 
         if result.solution is None:
