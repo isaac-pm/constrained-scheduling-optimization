@@ -206,6 +206,7 @@ def normalize_instance_path(problem_size, instance_name):
 
 def solve_instance(instance_path, model_path, solver_name):
     from minizinc import Instance, Model, Solver
+    import json
 
     instance_path = Path(instance_path)
     model_path = Path(model_path)
@@ -219,13 +220,41 @@ def solve_instance(instance_path, model_path, solver_name):
 
     try:
         model = Model(str(model_path))
-        solver = Solver.lookup(solver_name)
+
+        if solver_name == "gurobi":
+            msc_path = Path(tempfile.gettempdir()) / "gurobi_custom.msc"
+            msc_data = {
+                "id": "gurobi-custom",
+                "name": "Gurobi Custom",
+                "version": "12.0.1",
+                "executable": "fzn-gurobi",
+                "stdFlags": ["-a", "-n", "-s", "-v", "-p", "-r", "-f", "-t"],
+                "extraFlags": [
+                    [
+                        "--gurobi-dll",
+                        "Path to DLL",
+                        "string",
+                        "/opt/gurobi/lib/libgurobi120.so",
+                    ]
+                ],
+                "supportsMzn": False,
+                "supportsFzn": True,
+                "needsSolns2Out": True,
+                "needsMznExecutable": False,
+                "needsStdlibDir": False,
+                "isGUIApplication": False,
+            }
+            with msc_path.open("w", encoding="utf-8") as file:
+                json.dump(msc_data, file)
+
+            solver = Solver.load(msc_path)
+        else:
+            solver = Solver.lookup(solver_name)
+
         instance = Instance(solver, model)
         instance.add_file(str(dzn_path))
-        solve_kwargs = {"timeout": timedelta(minutes=TIMEOUT_MINUTES)}
-        if solver_name == "gurobi":
-            solve_kwargs["gurobi_dll"] = "/opt/gurobi/lib/libgurobi120.so"
-        result = instance.solve(**solve_kwargs)
+
+        result = instance.solve(timeout=timedelta(minutes=TIMEOUT_MINUTES))
         elapsed = time.perf_counter() - start_time
 
         if result.solution is None:
