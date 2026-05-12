@@ -44,3 +44,5 @@ tmp/
 
 # Apptainer / Singularity
 *.sif
+
+test_2.py
