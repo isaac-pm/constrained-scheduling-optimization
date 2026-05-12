@@ -18,7 +18,7 @@ DEFAULT_CONFIG_PATH = BASE_DIR / "instance_config.yaml"
 DEFAULT_OUTPUT_DIR = Path.cwd() / "results"
 DEFAULT_CP_MODEL = BASE_DIR / "rcpsp_cp.mzn"
 DEFAULT_ILP_MODEL = BASE_DIR / "rcpsp_ilp.mzn"
-TIMEOUT_MINUTES = 1
+TIMEOUT_MINUTES = 2
 SOLVERS = {
     "cp": ["chuffed", "gecode", "cp-sat"],
     "ilp": ["coin-bc", "gurobi"],
