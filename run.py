@@ -436,13 +436,16 @@ def write_timestamped_config_snapshot(output_path, config_path, config, selectio
 def main():
     args = parse_args()
     config = load_instance_config(args.config)
-    timestamp = datetime.now().strftime("%Y-%m-%d-%H:%M")
+    timestamp = datetime.now().strftime("%Y-%m-%d-%H:%M:%S")
+    hostname = platform.node() or "unknown-host"
+    safe_hostname = hostname.replace(" ", "_")
+    file_stamp = f"{timestamp}-{safe_hostname}"
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    results_path = output_dir / f"{timestamp}-results.csv"
-    hardware_path = output_dir / f"{timestamp}-hardware.json"
-    config_snapshot_path = output_dir / f"{timestamp}-config.yaml"
+    results_path = output_dir / f"{file_stamp}-results.csv"
+    hardware_path = output_dir / f"{file_stamp}-hardware.json"
+    config_snapshot_path = output_dir / f"{file_stamp}-config.yaml"
 
     selected_instances = {
         problem_size: list(instance_names)

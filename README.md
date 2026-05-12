@@ -52,9 +52,9 @@ It runs N instances per size ($j30$, $j60$, $j90$, $j120$) and solves each selec
 
 Outputs are written to `results/` with timestamped names:
 
-- `YYYY-MM-DD-HH:MM-results.csv`
-- `YYYY-MM-DD-HH:MM-hardware.json`
-- `YYYY-MM-DD-HH:MM-config.yaml`
+- `YYYY-MM-DD-HH:MM:SS-<hostname>-results.csv`
+- `YYYY-MM-DD-HH:MM:SS-<hostname>-hardware.json`
+- `YYYY-MM-DD-HH:MM:SS-<hostname>-config.yaml`
 
 Edit `instance_config.yaml` if you want to change the selected instances or repetitions.
 
