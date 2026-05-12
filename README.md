@@ -45,7 +45,7 @@ sbatch run_benchmark.sbatch
 ## Benchmark workflow
 
 The benchmark runner uses the reproducible instance list in `instance_config.yaml`.
-It runs N instances per size (`j30`, `j60`, `j90`, `j120`) and solves each selected instance 3 times with both CP and ILP.
+It runs N instances per size ($j30$, $j60$, $j90$, $j120$) and solves each selected instance M times with both CP and ILP.
 
 Outputs are written to `results/` with timestamped names:
 
@@ -54,6 +54,8 @@ Outputs are written to `results/` with timestamped names:
 - `YYYY-MM-DD-HH:MM-config.yaml`
 
 Edit `instance_config.yaml` if you want to change the selected instances or repetitions.
+
+Problem size: 4 problem sizes ($j30$, $j60$, $j90$, $j120$) x N (currently 10) files per size x 5 available solvers x M (currently 5) repetitions.
 
 ### Solvers
 
