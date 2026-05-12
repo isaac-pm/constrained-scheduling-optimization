@@ -8,9 +8,14 @@
 
 ## Running + outputs
 
-- `python run.py` runs the benchmark; it reads `instance_config.yaml` for instance selection and run counts.
+- `python run.py` runs the benchmark; it reads `instance_config.yaml` for instance selection and `runs_per_instance`.
 - Benchmark outputs are written to `results/` as timestamped `*-results.csv`, `*-hardware.json`, and `*-config.yaml` files.
 - `run.py` uses `rcpsp_cp.mzn` (faster, chuffed) and `rcpsp_ilp.mzn` (slower, coin-bc).
+
+## Container + Slurm
+
+- Container workflow uses Apptainer: build `scheduling.sif` from `scheduling.def`, then `apptainer run --userns scheduling.sif`.
+- Slurm runs are expected via `sbatch run_benchmark.sbatch`; interactive instructions in README include module loads and optional Gurobi bindings for ILP.
 
 ## Data + parsing
 

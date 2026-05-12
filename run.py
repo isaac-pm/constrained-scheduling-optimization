@@ -4,12 +4,15 @@ import csv
 import json
 import os
 import platform
+import resource
 import subprocess
 import tempfile
+import threading
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
+import psutil
 import yaml
 from psplib import parse
 
@@ -23,6 +26,57 @@ SOLVERS = {
     "cp": ["chuffed", "gecode", "cp-sat"],
     "ilp": ["coin-bc", "gurobi"],
 }
+
+
+class ResourceMonitor:
+    def __init__(self, interval_seconds=0.05):
+        self.interval_seconds = interval_seconds
+        self._stop_event = threading.Event()
+        self._samples = []
+        self._lock = threading.Lock()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+
+    def start(self):
+        self._thread.start()
+
+    def stop(self):
+        self._stop_event.set()
+        self._thread.join()
+
+    def _run(self):
+        try:
+            root = psutil.Process(os.getpid())
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            root = None
+
+        while not self._stop_event.is_set():
+            total_rss = 0
+            if root is not None:
+                try:
+                    children = root.children(recursive=True)
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    children = []
+                for proc in children:
+                    try:
+                        total_rss += proc.memory_info().rss
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        continue
+            with self._lock:
+                self._samples.append(total_rss)
+            self._stop_event.wait(self.interval_seconds)
+
+    def stats_mb(self):
+        with self._lock:
+            samples = list(self._samples)
+        if not samples:
+            return 0.0, 0.0
+        active_samples = [sample for sample in samples if sample > 0]
+        if not active_samples:
+            return 0.0, 0.0
+        avg_bytes = sum(active_samples) / len(active_samples)
+        max_bytes = max(active_samples)
+        mb = 1024 * 1024
+        return avg_bytes / mb, max_bytes / mb
 
 
 def parse_args():
@@ -216,7 +270,10 @@ def solve_instance(instance_path, model_path, solver_name):
         dzn_path = Path(temp_file.name)
 
     generate_dzn(data, dzn_path)
+    monitor = ResourceMonitor()
     start_time = time.perf_counter()
+    ru_start = resource.getrusage(resource.RUSAGE_CHILDREN)
+    monitor.start()
 
     try:
         if solver_name == "gurobi":
@@ -236,10 +293,21 @@ def solve_instance(instance_path, model_path, solver_name):
 
         result = instance.solve(**solve_kwargs)
         elapsed = time.perf_counter() - start_time
+        monitor.stop()
+
+        avg_ram_mb, max_ram_mb = monitor.stats_mb()
+        ru_end = resource.getrusage(resource.RUSAGE_CHILDREN)
+        cpu_time_used = (ru_end.ru_utime - ru_start.ru_utime) + (
+            ru_end.ru_stime - ru_start.ru_stime
+        )
+        cpu_percent = (cpu_time_used / elapsed) * 100.0 if elapsed > 0 else 0.0
 
         if result.solution is None:
             return {
                 "elapsed_seconds": elapsed,
+                "avg_ram_mb": avg_ram_mb,
+                "max_ram_mb": max_ram_mb,
+                "cpu_percent": cpu_percent,
                 "makespan": None,
                 "status": "no_solution",
                 "error": "",
@@ -247,17 +315,30 @@ def solve_instance(instance_path, model_path, solver_name):
 
         return {
             "elapsed_seconds": elapsed,
+            "avg_ram_mb": avg_ram_mb,
+            "max_ram_mb": max_ram_mb,
+            "cpu_percent": cpu_percent,
             "makespan": result.solution.makespan,
             "status": "ok",
             "error": "",
         }
     except Exception as exc:
         elapsed = time.perf_counter() - start_time
+        monitor.stop()
+        avg_ram_mb, max_ram_mb = monitor.stats_mb()
+        ru_end = resource.getrusage(resource.RUSAGE_CHILDREN)
+        cpu_time_used = (ru_end.ru_utime - ru_start.ru_utime) + (
+            ru_end.ru_stime - ru_start.ru_stime
+        )
+        cpu_percent = (cpu_time_used / elapsed) * 100.0 if elapsed > 0 else 0.0
         print(
             f"Error solving {instance_path} with {model_path} on {solver_name}: {exc}"
         )
         return {
             "elapsed_seconds": elapsed,
+            "avg_ram_mb": avg_ram_mb,
+            "max_ram_mb": max_ram_mb,
+            "cpu_percent": cpu_percent,
             "makespan": None,
             "status": "error",
             "error": str(exc),
@@ -442,6 +523,9 @@ def main():
                                 "started_at": started_at,
                                 "finished_at": finished_at,
                                 "elapsed_seconds": f"{result['elapsed_seconds']:.6f}",
+                                "avg_ram_mb": f"{result['avg_ram_mb']:.2f}",
+                                "max_ram_mb": f"{result['max_ram_mb']:.2f}",
+                                "cpu_percent": f"{result['cpu_percent']:.1f}",
                                 "makespan": result["makespan"],
                                 "status": result["status"],
                                 "error": result["error"],
@@ -469,14 +553,24 @@ def main():
     print("OVERALL SUMMARY")
     print("=" * 75)
     print(f"Total instance-run pairs: {len(rows)}")
-    solver_times = {}
+    solver_stats = {}
     for row in rows:
         solver = row["solver"]
-        solver_times.setdefault(solver, []).append(float(row["elapsed_seconds"]))
+        stats = solver_stats.setdefault(solver, {"time": [], "ram": [], "cpu": []})
+        stats["time"].append(float(row["elapsed_seconds"]))
+        stats["ram"].append(float(row["avg_ram_mb"]))
+        stats["cpu"].append(float(row["cpu_percent"]))
 
-    for solver_name, times in sorted(solver_times.items()):
+    for solver_name, metrics in sorted(solver_stats.items()):
+        times = metrics["time"]
+        rams = metrics["ram"]
+        cpus = metrics["cpu"]
+        avg_time = sum(times) / len(times)
+        avg_ram = sum(rams) / len(rams)
+        avg_cpu = sum(cpus) / len(cpus)
         print(
-            f"{solver_name:<8} - Total: {sum(times):.2f}s, Avg: {sum(times) / len(times):.2f}s, Min: {min(times):.2f}s, Max: {max(times):.2f}s"
+            f"{solver_name:<8} - Time: {sum(times):.2f}s (Avg {avg_time:.2f}s, Min {min(times):.2f}s, Max {max(times):.2f}s) | "
+            f"Avg RAM: {avg_ram:.1f}MB | Avg CPU: {avg_cpu:.0f}%"
         )
     print(f"\nSaved results to {results_path}")
     print(f"Saved hardware characteristics to {hardware_path}")
