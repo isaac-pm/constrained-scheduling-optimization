@@ -40,6 +40,9 @@ python run.py
 
 ```bash
 sbatch run_benchmark.sbatch
+
+squeue --user $USER
+watch cat slurm-rcpsp-benchmark-<JOBID>.out
 ```
 
 ## Benchmark workflow
