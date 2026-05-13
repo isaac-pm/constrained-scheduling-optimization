@@ -447,6 +447,26 @@ def main():
     hardware_path = output_dir / f"{file_stamp}-hardware.json"
     config_snapshot_path = output_dir / f"{file_stamp}-config.yaml"
 
+    fieldnames = [
+        "timestamp",
+        "problem_size",
+        "instance_name",
+        "run_number",
+        "runs_per_instance",
+        "paradigm",
+        "solver",
+        "model",
+        "started_at",
+        "finished_at",
+        "elapsed_seconds",
+        "avg_ram_mb",
+        "max_ram_mb",
+        "cpu_percent",
+        "makespan",
+        "status",
+        "error",
+    ]
+
     selected_instances = {
         problem_size: list(instance_names)
         for problem_size, instance_names in config["instances"].items()
@@ -465,6 +485,13 @@ def main():
         file.write("\n")
 
     rows = []
+    results_exists = results_path.exists() and results_path.stat().st_size > 0
+    results_file = results_path.open("a", newline="", encoding="utf-8")
+    writer = csv.DictWriter(results_file, fieldnames=fieldnames)
+    if not results_exists:
+        writer.writeheader()
+        results_file.flush()
+        os.fsync(results_file.fileno())
     total_instances = sum(
         len(instance_names) for instance_names in selected_instances.values()
     )
@@ -513,27 +540,29 @@ def main():
                         result = solve_instance(instance_path, model_path, solver_name)
                         finished_at = datetime.now().isoformat(timespec="seconds")
 
-                        rows.append(
-                            {
-                                "timestamp": timestamp,
-                                "problem_size": problem_size,
-                                "instance_name": instance_name,
-                                "run_number": run_number,
-                                "runs_per_instance": config["runs_per_instance"],
-                                "paradigm": paradigm,
-                                "solver": solver_name,
-                                "model": model_path.name,
-                                "started_at": started_at,
-                                "finished_at": finished_at,
-                                "elapsed_seconds": f"{result['elapsed_seconds']:.6f}",
-                                "avg_ram_mb": f"{result['avg_ram_mb']:.2f}",
-                                "max_ram_mb": f"{result['max_ram_mb']:.2f}",
-                                "cpu_percent": f"{result['cpu_percent']:.1f}",
-                                "makespan": result["makespan"],
-                                "status": result["status"],
-                                "error": result["error"],
-                            }
-                        )
+                        row = {
+                            "timestamp": timestamp,
+                            "problem_size": problem_size,
+                            "instance_name": instance_name,
+                            "run_number": run_number,
+                            "runs_per_instance": config["runs_per_instance"],
+                            "paradigm": paradigm,
+                            "solver": solver_name,
+                            "model": model_path.name,
+                            "started_at": started_at,
+                            "finished_at": finished_at,
+                            "elapsed_seconds": f"{result['elapsed_seconds']:.6f}",
+                            "avg_ram_mb": f"{result['avg_ram_mb']:.2f}",
+                            "max_ram_mb": f"{result['max_ram_mb']:.2f}",
+                            "cpu_percent": f"{result['cpu_percent']:.1f}",
+                            "makespan": result["makespan"],
+                            "status": result["status"],
+                            "error": result["error"],
+                        }
+                        rows.append(row)
+                        writer.writerow(row)
+                        results_file.flush()
+                        os.fsync(results_file.fileno())
 
                         label = (
                             f"{result['makespan']} ({result['elapsed_seconds']:.2f}s)"
@@ -545,12 +574,6 @@ def main():
                         )
 
                 print(f"{base_label} | " + " | ".join(summary_labels))
-
-    fieldnames = list(rows[0].keys()) if rows else []
-    with results_path.open("w", newline="", encoding="utf-8") as file:
-        writer = csv.DictWriter(file, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(rows)
 
     print("\n" + "=" * 75)
     print("OVERALL SUMMARY")
@@ -575,6 +598,7 @@ def main():
             f"{solver_name:<8} - Time: {sum(times):.2f}s (Avg {avg_time:.2f}s, Min {min(times):.2f}s, Max {max(times):.2f}s) | "
             f"Avg RAM: {avg_ram:.1f}MB | Avg CPU: {avg_cpu:.0f}%"
         )
+    results_file.close()
     print(f"\nSaved results to {results_path}")
     print(f"Saved hardware characteristics to {hardware_path}")
     print(f"Saved selected-instance snapshot to {config_snapshot_path}")
