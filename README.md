@@ -40,6 +40,8 @@ python run.py
 
 ```bash
 sbatch run_benchmark.sbatch
+# Or choose another config file in this folder
+sbatch run_benchmark.sbatch instance_j60_config.yaml
 
 squeue --user $USER
 watch cat slurm-rcpsp-benchmark-<JOBID>.out
@@ -47,7 +49,7 @@ watch cat slurm-rcpsp-benchmark-<JOBID>.out
 
 ## Benchmark workflow
 
-The benchmark runner uses the reproducible instance list in `instance_config.yaml`.
+The benchmark runner uses the reproducible instance list in `instance_config.yaml` by default.
 It runs N instances per size ($j30$, $j60$, $j90$, $j120$) and solves each selected instance M times with both CP and ILP.
 
 Outputs are written to `results/` with timestamped names:

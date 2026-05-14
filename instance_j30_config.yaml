@@ -1,0 +1,29 @@
+# Instance selection configuration for reproducibility
+# 40 longest proven-optimal j30 instances by optimal_makespan
+# Source: Problem_data/j30_sm_merged.json
+
+instances:
+  j30:
+    - j3045_6
+    - j3045_2
+    - j3013_8
+    - j3029_4
+    - j3041_6
+    - j3045_7
+    - j3041_5
+    - j3041_10
+    - j303_4
+    - j3029_5
+    - j3029_9
+    - j3025_7
+    - j3045_8
+    - j3025_1
+    - j309_2
+    - j3029_6
+    - j3037_7
+    - j3041_7
+    - j3041_9
+    - j3045_3
+
+
+runs_per_instance: 1

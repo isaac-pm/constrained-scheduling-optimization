@@ -96,6 +96,20 @@ def parse_args():
     return parser.parse_args()
 
 
+def resolve_config_path(config_path):
+    path = Path(config_path).expanduser()
+    if path.exists():
+        return path
+
+    base_relative_path = BASE_DIR / path
+    if base_relative_path.exists():
+        return base_relative_path
+
+    raise FileNotFoundError(
+        f"Config file not found: {config_path}. Tried '{path}' and '{base_relative_path}'."
+    )
+
+
 def calculate_greedy_horizon(data, topological_order):
     """Computes a fast upper bound using a greedy parallel schedule."""
     n = data["n"]
@@ -235,13 +249,14 @@ def generate_dzn(data, output_path):
 
 
 def load_instance_config(config_path):
-    with Path(config_path).open("r", encoding="utf-8") as file:
+    config_path = resolve_config_path(config_path)
+    with config_path.open("r", encoding="utf-8") as file:
         config = yaml.safe_load(file) or {}
 
     instances = config.get("instances")
     if not isinstance(instances, dict) or not instances:
         raise ValueError(
-            "instance_config.yaml must define a non-empty 'instances' mapping"
+            f"{config_path} must define a non-empty 'instances' mapping"
         )
 
     runs_per_instance = int(config.get("runs_per_instance", 3))
@@ -251,6 +266,7 @@ def load_instance_config(config_path):
     return {
         "instances": instances,
         "runs_per_instance": runs_per_instance,
+        "config_path": config_path,
     }
 
 
@@ -436,6 +452,7 @@ def write_timestamped_config_snapshot(output_path, config_path, config, selectio
 def main():
     args = parse_args()
     config = load_instance_config(args.config)
+    config_path = config["config_path"]
     timestamp = datetime.now().strftime("%Y-%m-%d-%H:%M:%S")
     hostname = platform.node() or "unknown-host"
     safe_hostname = hostname.replace(" ", "_")
@@ -474,7 +491,7 @@ def main():
 
     write_timestamped_config_snapshot(
         config_snapshot_path,
-        args.config,
+        config_path,
         config,
         selected_instances,
     )

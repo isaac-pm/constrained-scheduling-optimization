@@ -1,0 +1,29 @@
+# Instance selection configuration for reproducibility
+# 40 longest proven-optimal j90 instances by optimal_makespan
+# Source: Problem_data/j90_sm_merged.json
+
+instances:
+  j90:
+    - j9019_6
+    - j9037_3
+    - j9023_9
+    - j9037_5
+    - j9021_3
+    - j9037_4
+    - j9037_7
+    - j9037_9
+    - j9037_10
+    - j9019_9
+    - j9021_9
+    - j9028_9
+    - j9037_8
+    - j9039_2
+    - j9021_2
+    - j9023_3
+    - j902_2
+    - j9033_10
+    - j9036_2
+    - j9043_6
+
+
+runs_per_instance: 1

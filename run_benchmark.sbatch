@@ -45,9 +45,17 @@ export APPTAINERENV_GRB_LICENSE_FILE="/opt/gurobi/gurobi.lic"
 # 5. Execute the benchmark script
 cd "${SLURM_SUBMIT_DIR:-$PWD}"
 
+CONFIG_FILE="${1:-instance_config.yaml}"
+
 if [[ ! -f scheduling.sif ]]; then
     echo "ERROR: scheduling.sif not found."
     exit 1
 fi
 
-apptainer run --userns scheduling.sif
+if [[ ! -f "$CONFIG_FILE" ]]; then
+    echo "ERROR: config file '$CONFIG_FILE' not found."
+    exit 1
+fi
+
+echo "Using config file: $CONFIG_FILE"
+apptainer run --userns scheduling.sif --config "$CONFIG_FILE"
