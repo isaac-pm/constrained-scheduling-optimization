@@ -1,0 +1,25 @@
+source_config: /mnt/aiongpfs/users/jvaldivia/2s/optimization/constrained_2/constrained-scheduling-optimization/instance_j120_config.yaml
+generated_at: '2026-05-15T22:34:02'
+runs_per_instance: 1
+instances:
+  j120:
+  - j1206_3
+  - j12015_8
+  - j1201_3
+  - j1201_7
+  - j1209_5
+  - j12010_8
+  - j1207_2
+  - j1201_5
+  - j1201_9
+  - j12010_1
+  - j1201_2
+  - j1201_8
+  - j12015_9
+  - j1201_10
+  - j1204_2
+  - j1205_9
+  - j1202_5
+  - j1203_10
+  - j1203_6
+  - j12014_9
