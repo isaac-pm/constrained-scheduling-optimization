@@ -39,9 +39,13 @@ python run.py
 ### Scheduled job
 
 ```bash
+# Schedule a single job
 sbatch run_benchmark.sbatch
 # Or choose another config file in this folder
 sbatch run_benchmark.sbatch instance_j60_config.yaml
+
+# Schedule multiple jobs
+sbatch --array=1-50 run_benchmark.sbatch
 
 squeue --user $USER
 watch cat slurm-rcpsp-benchmark-<JOBID>.out
