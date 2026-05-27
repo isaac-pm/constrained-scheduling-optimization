@@ -1,0 +1,8 @@
+source_config: /home/isaac/Documents/constrained-scheduling-optimization/instance_config.yaml
+generated_at: '2026-05-12T10:58:29'
+runs_per_instance: 1
+instances:
+  j30:
+  - j3018_8
+  - j3045_3
+  - j303_10
